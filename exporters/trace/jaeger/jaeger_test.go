@@ -17,6 +17,7 @@ package jaeger
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -114,9 +115,7 @@ func TestNewExportPipeline(t *testing.T) {
 			name:     "always on",
 			endpoint: WithCollectorEndpoint(collectorEndpoint),
 			options: []Option{
-				WithSDK(&sdktrace.Config{
-					DefaultSampler: sdktrace.AlwaysSample(),
-				}),
+				WithSDKOptions(sdktrace.WithDefaultSampler(sdktrace.AlwaysSample())),
 			},
 			expectedProviderType: &sdktrace.TracerProvider{},
 			testSpanSampling:     true,
@@ -126,9 +125,7 @@ func TestNewExportPipeline(t *testing.T) {
 			name:     "never",
 			endpoint: WithCollectorEndpoint(collectorEndpoint),
 			options: []Option{
-				WithSDK(&sdktrace.Config{
-					DefaultSampler: sdktrace.NeverSample(),
-				}),
+				WithSDKOptions(sdktrace.WithDefaultSampler(sdktrace.NeverSample())),
 			},
 			expectedProviderType: &sdktrace.TracerProvider{},
 			testSpanSampling:     true,
@@ -885,4 +882,82 @@ func TestProcess(t *testing.T) {
 			assert.Equal(t, tc.expectedProcess, pro)
 		})
 	}
+}
+
+type testCollectorEnpointWithSpans struct {
+	spansUploaded *[]*gen.Span
+}
+
+var _ batchUploader = (*testCollectorEnpointWithSpans)(nil)
+
+func (c *testCollectorEnpointWithSpans) upload(batch *gen.Batch) error {
+	*c.spansUploaded = append(*c.spansUploaded, batch.Spans...)
+	return nil
+}
+
+func withTestCollectorEnpointWithSpans(spansUploaded *[]*gen.Span) func() (batchUploader, error) {
+	return func() (batchUploader, error) {
+		return &testCollectorEnpointWithSpans{
+			spansUploaded: spansUploaded,
+		}, nil
+	}
+}
+
+func TestNewExporterPipelineWithOptions(t *testing.T) {
+	envStore, err := ottest.SetEnvVariables(map[string]string{
+		envDisabled: "false",
+	})
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, envStore.Restore())
+	}()
+
+	const (
+		serviceName     = "test-service"
+		tagKey          = "key"
+		tagVal          = "val"
+		eventCountLimit = 10
+	)
+
+	var uploadedSpans []*gen.Span
+	tp, spanFlush, err := NewExportPipeline(
+		withTestCollectorEnpointWithSpans(&uploadedSpans),
+		WithSDKOptions(
+			sdktrace.WithResource(resource.NewWithAttributes(
+				semconv.ServiceNameKey.String(serviceName),
+				attribute.String(tagKey, tagVal),
+			)),
+			sdktrace.WithSpanLimits(sdktrace.SpanLimits{
+				EventCountLimit: eventCountLimit,
+			}),
+		),
+	)
+	assert.NoError(t, err)
+
+	otel.SetTracerProvider(tp)
+	_, span := otel.Tracer("test-tracer").Start(context.Background(), "test-span")
+	for i := 0; i < eventCountLimit*2; i++ {
+		span.AddEvent(fmt.Sprintf("event-%d", i))
+	}
+	span.End()
+	spanFlush()
+
+	assert.True(t, span.SpanContext().IsValid())
+
+	assert.True(t, len(uploadedSpans) == 1)
+	uploadedSpan := uploadedSpans[0]
+	assert.Equal(t, len(uploadedSpan.GetLogs()), eventCountLimit)
+	assert.Condition(t, func() bool {
+		tagFound := false
+		serviceNameFound := false
+		for _, tag := range uploadedSpan.GetTags() {
+			if tag.GetKey() == tagKey && tag.GetVStr() == tagVal {
+				tagFound = true
+			}
+			if tag.GetKey() == string(semconv.ServiceNameKey) && tag.GetVStr() == serviceName {
+				serviceNameFound = true
+			}
+		}
+		return tagFound && serviceNameFound
+	})
 }

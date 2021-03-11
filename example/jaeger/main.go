@@ -42,6 +42,7 @@ func initTracer() func() {
 				attribute.Float64("float", 312.23),
 			),
 		}),
+		jaeger.WithSDKOptions(sdktrace.WithDefaultSampler(sdktrace.AlwaysSample())),
 	)
 	if err != nil {
 		log.Fatal(err)

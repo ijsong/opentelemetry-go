@@ -27,6 +27,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   - `trace.NewSpanContext()` can be used in conjunction with the `trace.SpanContextConfig` struct to initialize a new `SpanContext` where all values are known.
 - Renamed the `LabelSet` method of `"go.opentelemetry.io/otel/sdk/resource".Resource` to `Set`. (#1692)
 - Jaeger exporter populates Jaeger's Span Process from Resource. (#1673)
+- Changed `WithSDK` to `WithSDKOptions` to accept variadic arguments of `TracerProviderOption` type in `go.opentelemetry.io/otel/exporters/trace/jaeger` package. (#1693)
+- Changed `WithSDK` to `WithSDKOptions` to accept variadic arguments of `TracerProviderOption` type in `go.opentelemetry.io/otel/exporters/trace/zipkin` package. (#1693)
+- Update zipkin export pipeline in `go.opentelemetry.io/otel/exporters/trace/zipkin` package to add resources specified by `WithResource` its tags. (#1693)
 
 ### Removed
 
@@ -36,6 +39,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Removed setting status to `Error` while recording an error as a span event in `RecordError`. (#1663)
 - Removed `WithConfig` from tracer provider to avoid overriding configuration. (#1633)
 - Removed `jaeger.WithProcess`. (#1673)
+- Removed `ApplyConfig` method and `Config` struct from tracer provider. (#1693)
 
 ### Fixed
 

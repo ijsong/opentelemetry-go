@@ -42,7 +42,7 @@ func initTracer(url string) func() {
 		url,
 		"zipkin-test",
 		zipkin.WithLogger(logger),
-		zipkin.WithSDK(&sdktrace.Config{DefaultSampler: sdktrace.AlwaysSample()}),
+		zipkin.WithSDKOptions(sdktrace.WithDefaultSampler(sdktrace.AlwaysSample())),
 	)
 	if err != nil {
 		log.Fatal(err)

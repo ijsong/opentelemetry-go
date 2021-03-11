@@ -31,9 +31,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	export "go.opentelemetry.io/otel/sdk/export/trace"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -63,9 +66,7 @@ func TestNewExportPipeline(t *testing.T) {
 		{
 			name: "always on",
 			options: []Option{
-				WithSDK(&sdktrace.Config{
-					DefaultSampler: sdktrace.AlwaysSample(),
-				}),
+				WithSDKOptions(sdktrace.WithDefaultSampler(sdktrace.AlwaysSample())),
 			},
 			testSpanSampling:    true,
 			spanShouldBeSampled: true,
@@ -73,9 +74,7 @@ func TestNewExportPipeline(t *testing.T) {
 		{
 			name: "never",
 			options: []Option{
-				WithSDK(&sdktrace.Config{
-					DefaultSampler: sdktrace.NeverSample(),
-				}),
+				WithSDKOptions(sdktrace.WithDefaultSampler(sdktrace.NeverSample())),
 			},
 			testSpanSampling:    true,
 			spanShouldBeSampled: false,
@@ -387,4 +386,48 @@ func TestErrorOnExportShutdownExporter(t *testing.T) {
 	require.NoError(t, err)
 	assert.NoError(t, exp.Shutdown(context.Background()))
 	assert.NoError(t, exp.ExportSpans(context.Background(), nil))
+}
+
+func TestNewExportPipelineWithOptions(t *testing.T) {
+	const (
+		tagKey          = "key"
+		tagVal          = "val"
+		eventCountLimit = 10
+	)
+
+	collector := startMockZipkinCollector(t)
+	defer collector.Close()
+
+	tp, err := NewExportPipeline(collector.url, serviceName,
+		WithSDKOptions(
+			sdktrace.WithResource(resource.NewWithAttributes(
+				semconv.ServiceNameKey.String(serviceName),
+				attribute.String(tagKey, tagVal),
+			)),
+			sdktrace.WithSpanLimits(sdktrace.SpanLimits{
+				EventCountLimit: eventCountLimit,
+			}),
+		),
+	)
+	require.NoError(t, err)
+
+	otel.SetTracerProvider(tp)
+	_, span := otel.Tracer("zipkin-tracer").Start(context.TODO(), "test-span")
+	for i := 0; i < eventCountLimit*2; i++ {
+		span.AddEvent(fmt.Sprintf("event-%d", i))
+	}
+	span.End()
+
+	err = tp.ForceFlush(context.TODO())
+	require.NoError(t, err)
+
+	checkFunc := func() bool {
+		return collector.ModelsLen() == 1
+	}
+	// It should wait for more than a default batch timeout of BatchSpanProcessor since Zipkin uses default options.
+	require.Eventually(t, checkFunc, 10*time.Second, 10*time.Millisecond)
+	model := collector.StealModels()[0]
+	require.Equal(t, len(model.Annotations), eventCountLimit)
+	require.Contains(t, model.Tags, tagKey)
+	require.Contains(t, model.Tags, string(semconv.ServiceNameKey))
 }

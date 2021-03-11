@@ -38,7 +38,18 @@ const (
 // TracerProviderConfig
 type TracerProviderConfig struct {
 	processors []SpanProcessor
-	config     Config
+
+	// defaultSampler is the default sampler used when creating new spans.
+	defaultSampler Sampler
+
+	// idGenerator is for internal use only.
+	idGenerator IDGenerator
+
+	// spanLimits used to limit the number of attributes, events and links to a span.
+	spanLimits SpanLimits
+
+	// resource contains attributes representing an entity that produces telemetry.
+	resource *resource.Resource
 }
 
 type TracerProviderOption func(*TracerProviderConfig)
@@ -47,7 +58,10 @@ type TracerProvider struct {
 	mu             sync.Mutex
 	namedTracer    map[instrumentation.Library]*tracer
 	spanProcessors atomic.Value
-	config         atomic.Value // access atomically
+	defaultSampler Sampler
+	idGenerator    IDGenerator
+	spanLimits     SpanLimits
+	resource       *resource.Resource
 }
 
 var _ trace.TracerProvider = &TracerProvider{}
@@ -62,26 +76,19 @@ func NewTracerProvider(opts ...TracerProviderOption) *TracerProvider {
 		opt(o)
 	}
 
+	ensureValidTracerProviderConfig(o)
+
 	tp := &TracerProvider{
-		namedTracer: make(map[instrumentation.Library]*tracer),
+		namedTracer:    make(map[instrumentation.Library]*tracer),
+		defaultSampler: o.defaultSampler,
+		idGenerator:    o.idGenerator,
+		spanLimits:     o.spanLimits,
+		resource:       o.resource,
 	}
-	tp.config.Store(&Config{
-		DefaultSampler: ParentBased(AlwaysSample()),
-		IDGenerator:    defaultIDGenerator(),
-		SpanLimits: SpanLimits{
-			AttributeCountLimit:         DefaultAttributeCountLimit,
-			EventCountLimit:             DefaultEventCountLimit,
-			LinkCountLimit:              DefaultLinkCountLimit,
-			AttributePerEventCountLimit: DefaultAttributePerEventCountLimit,
-			AttributePerLinkCountLimit:  DefaultAttributePerLinkCountLimit,
-		},
-	})
 
 	for _, sp := range o.processors {
 		tp.RegisterSpanProcessor(sp)
 	}
-
-	tp.ApplyConfig(o.config)
 
 	return tp
 }
@@ -168,40 +175,6 @@ func (p *TracerProvider) UnregisterSpanProcessor(s SpanProcessor) {
 	p.spanProcessors.Store(spss)
 }
 
-// ApplyConfig changes the configuration of the provider.
-// If a field in the configuration is empty or nil then its original value is preserved.
-func (p *TracerProvider) ApplyConfig(cfg Config) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	c := *p.config.Load().(*Config)
-	if cfg.DefaultSampler != nil {
-		c.DefaultSampler = cfg.DefaultSampler
-	}
-	if cfg.IDGenerator != nil {
-		c.IDGenerator = cfg.IDGenerator
-	}
-	if cfg.SpanLimits.EventCountLimit > 0 {
-		c.SpanLimits.EventCountLimit = cfg.SpanLimits.EventCountLimit
-	}
-	if cfg.SpanLimits.AttributeCountLimit > 0 {
-		c.SpanLimits.AttributeCountLimit = cfg.SpanLimits.AttributeCountLimit
-	}
-	if cfg.SpanLimits.LinkCountLimit > 0 {
-		c.SpanLimits.LinkCountLimit = cfg.SpanLimits.LinkCountLimit
-	}
-	if cfg.SpanLimits.AttributePerEventCountLimit > 0 {
-		c.SpanLimits.AttributePerEventCountLimit = cfg.SpanLimits.AttributePerEventCountLimit
-	}
-	if cfg.SpanLimits.AttributePerLinkCountLimit > 0 {
-		c.SpanLimits.AttributePerLinkCountLimit = cfg.SpanLimits.AttributePerLinkCountLimit
-	}
-	c.Resource = cfg.Resource
-	if c.Resource == nil {
-		c.Resource = resource.Default()
-	}
-	p.config.Store(&c)
-}
-
 // ForceFlush immediately exports all spans that have not yet been exported for
 // all the registered span processors.
 func (p *TracerProvider) ForceFlush(ctx context.Context) error {
@@ -278,27 +251,61 @@ func WithSpanProcessor(sp SpanProcessor) TracerProviderOption {
 // The resource is added to the span when it is started.
 func WithResource(r *resource.Resource) TracerProviderOption {
 	return func(opts *TracerProviderConfig) {
-		opts.config.Resource = r
+		if r != nil {
+			opts.resource = r
+		}
 	}
 }
 
 // WithIDGenerator option registers an IDGenerator with the TracerProvider.
 func WithIDGenerator(g IDGenerator) TracerProviderOption {
 	return func(opts *TracerProviderConfig) {
-		opts.config.IDGenerator = g
+		if g != nil {
+			opts.idGenerator = g
+		}
 	}
 }
 
 // WithDefaultSampler option registers a DefaultSampler with the the TracerProvider.
 func WithDefaultSampler(s Sampler) TracerProviderOption {
 	return func(opts *TracerProviderConfig) {
-		opts.config.DefaultSampler = s
+		if s != nil {
+			opts.defaultSampler = s
+		}
 	}
 }
 
 // WithSpanLimits option registers a SpanLimits with the the TracerProvider.
 func WithSpanLimits(sl SpanLimits) TracerProviderOption {
 	return func(opts *TracerProviderConfig) {
-		opts.config.SpanLimits = sl
+		opts.spanLimits = sl
+	}
+}
+
+// ensureValidTracerProviderConfig ensures that given TracerProviderConfig is valid.
+func ensureValidTracerProviderConfig(cfg *TracerProviderConfig) {
+	if cfg.defaultSampler == nil {
+		cfg.defaultSampler = ParentBased(AlwaysSample())
+	}
+	if cfg.idGenerator == nil {
+		cfg.idGenerator = defaultIDGenerator()
+	}
+	if cfg.spanLimits.EventCountLimit <= 0 {
+		cfg.spanLimits.EventCountLimit = DefaultEventCountLimit
+	}
+	if cfg.spanLimits.AttributeCountLimit <= 0 {
+		cfg.spanLimits.AttributeCountLimit = DefaultAttributeCountLimit
+	}
+	if cfg.spanLimits.LinkCountLimit <= 0 {
+		cfg.spanLimits.LinkCountLimit = DefaultLinkCountLimit
+	}
+	if cfg.spanLimits.AttributePerEventCountLimit <= 0 {
+		cfg.spanLimits.AttributePerEventCountLimit = DefaultAttributePerEventCountLimit
+	}
+	if cfg.spanLimits.AttributePerLinkCountLimit <= 0 {
+		cfg.spanLimits.AttributePerLinkCountLimit = DefaultAttributePerLinkCountLimit
+	}
+	if cfg.resource == nil {
+		cfg.resource = resource.Default()
 	}
 }
