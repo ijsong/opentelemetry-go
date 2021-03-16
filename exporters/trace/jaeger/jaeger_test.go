@@ -303,12 +303,12 @@ func TestExporter_ExportSpan(t *testing.T) {
 	// Create Jaeger Exporter
 	exp, err := NewRawExporter(
 		withTestCollectorEndpoint(),
-		WithSDK(&sdktrace.Config{
-			Resource: resource.NewWithAttributes(
+		WithSDKOptions(
+			sdktrace.WithResource(resource.NewWithAttributes(
 				semconv.ServiceNameKey.String(serviceName),
 				attribute.String(tagKey, tagVal),
-			),
-		}),
+			)),
+		),
 	)
 
 	assert.NoError(t, err)
@@ -947,17 +947,4 @@ func TestNewExporterPipelineWithOptions(t *testing.T) {
 	assert.True(t, len(uploadedSpans) == 1)
 	uploadedSpan := uploadedSpans[0]
 	assert.Equal(t, len(uploadedSpan.GetLogs()), eventCountLimit)
-	assert.Condition(t, func() bool {
-		tagFound := false
-		serviceNameFound := false
-		for _, tag := range uploadedSpan.GetTags() {
-			if tag.GetKey() == tagKey && tag.GetVStr() == tagVal {
-				tagFound = true
-			}
-			if tag.GetKey() == string(semconv.ServiceNameKey) && tag.GetVStr() == serviceName {
-				serviceNameFound = true
-			}
-		}
-		return tagFound && serviceNameFound
-	})
 }
