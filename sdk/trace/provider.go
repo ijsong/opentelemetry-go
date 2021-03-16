@@ -39,8 +39,8 @@ const (
 type TracerProviderConfig struct {
 	processors []SpanProcessor
 
-	// defaultSampler is the default sampler used when creating new spans.
-	defaultSampler Sampler
+	// sampler is the default sampler used when creating new spans.
+	sampler Sampler
 
 	// idGenerator is for internal use only.
 	idGenerator IDGenerator
@@ -58,7 +58,7 @@ type TracerProvider struct {
 	mu             sync.Mutex
 	namedTracer    map[instrumentation.Library]*tracer
 	spanProcessors atomic.Value
-	defaultSampler Sampler
+	sampler        Sampler
 	idGenerator    IDGenerator
 	spanLimits     SpanLimits
 	resource       *resource.Resource
@@ -79,11 +79,11 @@ func NewTracerProvider(opts ...TracerProviderOption) *TracerProvider {
 	ensureValidTracerProviderConfig(o)
 
 	tp := &TracerProvider{
-		namedTracer:    make(map[instrumentation.Library]*tracer),
-		defaultSampler: o.defaultSampler,
-		idGenerator:    o.idGenerator,
-		spanLimits:     o.spanLimits,
-		resource:       o.resource,
+		namedTracer: make(map[instrumentation.Library]*tracer),
+		sampler:     o.sampler,
+		idGenerator: o.idGenerator,
+		spanLimits:  o.spanLimits,
+		resource:    o.resource,
 	}
 
 	for _, sp := range o.processors {
@@ -270,7 +270,7 @@ func WithIDGenerator(g IDGenerator) TracerProviderOption {
 func WithDefaultSampler(s Sampler) TracerProviderOption {
 	return func(opts *TracerProviderConfig) {
 		if s != nil {
-			opts.defaultSampler = s
+			opts.sampler = s
 		}
 	}
 }
@@ -284,8 +284,8 @@ func WithSpanLimits(sl SpanLimits) TracerProviderOption {
 
 // ensureValidTracerProviderConfig ensures that given TracerProviderConfig is valid.
 func ensureValidTracerProviderConfig(cfg *TracerProviderConfig) {
-	if cfg.defaultSampler == nil {
-		cfg.defaultSampler = ParentBased(AlwaysSample())
+	if cfg.sampler == nil {
+		cfg.sampler = ParentBased(AlwaysSample())
 	}
 	if cfg.idGenerator == nil {
 		cfg.idGenerator = defaultIDGenerator()

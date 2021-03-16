@@ -553,7 +553,7 @@ func startSpanInternal(ctx context.Context, tr *tracer, name string, parent trac
 		remoteParent: remoteParent,
 		parent:       parent,
 		name:         name,
-		sampler:      provider.defaultSampler,
+		sampler:      provider.sampler,
 		span:         span,
 		attributes:   o.Attributes,
 		links:        o.Links,
