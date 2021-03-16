@@ -884,21 +884,21 @@ func TestProcess(t *testing.T) {
 	}
 }
 
-type testCollectorEnpointWithSpans struct {
-	spansUploaded *[]*gen.Span
+type testCollectorEnpointWithBatches struct {
+	batchesUploaded *[]*gen.Batch
 }
 
-var _ batchUploader = (*testCollectorEnpointWithSpans)(nil)
+var _ batchUploader = (*testCollectorEnpointWithBatches)(nil)
 
-func (c *testCollectorEnpointWithSpans) upload(batch *gen.Batch) error {
-	*c.spansUploaded = append(*c.spansUploaded, batch.Spans...)
+func (c *testCollectorEnpointWithBatches) upload(batch *gen.Batch) error {
+	*c.batchesUploaded = append(*c.batchesUploaded, batch)
 	return nil
 }
 
-func withTestCollectorEnpointWithSpans(spansUploaded *[]*gen.Span) func() (batchUploader, error) {
+func withTestCollectorEnpointWithSpans(batchesUploaded *[]*gen.Batch) func() (batchUploader, error) {
 	return func() (batchUploader, error) {
-		return &testCollectorEnpointWithSpans{
-			spansUploaded: spansUploaded,
+		return &testCollectorEnpointWithBatches{
+			batchesUploaded: batchesUploaded,
 		}, nil
 	}
 }
@@ -914,18 +914,15 @@ func TestNewExporterPipelineWithOptions(t *testing.T) {
 
 	const (
 		serviceName     = "test-service"
-		tagKey          = "key"
-		tagVal          = "val"
 		eventCountLimit = 10
 	)
 
-	var uploadedSpans []*gen.Span
+	var uploadedBatches []*gen.Batch
 	tp, spanFlush, err := NewExportPipeline(
-		withTestCollectorEnpointWithSpans(&uploadedSpans),
+		withTestCollectorEnpointWithSpans(&uploadedBatches),
 		WithSDKOptions(
 			sdktrace.WithResource(resource.NewWithAttributes(
 				semconv.ServiceNameKey.String(serviceName),
-				attribute.String(tagKey, tagVal),
 			)),
 			sdktrace.WithSpanLimits(sdktrace.SpanLimits{
 				EventCountLimit: eventCountLimit,
@@ -944,7 +941,10 @@ func TestNewExporterPipelineWithOptions(t *testing.T) {
 
 	assert.True(t, span.SpanContext().IsValid())
 
-	assert.True(t, len(uploadedSpans) == 1)
-	uploadedSpan := uploadedSpans[0]
-	assert.Equal(t, len(uploadedSpan.GetLogs()), eventCountLimit)
+	assert.True(t, len(uploadedBatches) == 1)
+	uploadedBatch := uploadedBatches[0]
+	assert.Equal(t, serviceName, uploadedBatch.GetProcess().GetServiceName())
+	assert.True(t, len(uploadedBatch.GetSpans()) == 1)
+	uploadedSpan := uploadedBatch.GetSpans()[0]
+	assert.Equal(t, eventCountLimit, len(uploadedSpan.GetLogs()))
 }

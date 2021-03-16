@@ -31,7 +31,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -388,20 +387,15 @@ func TestErrorOnExportShutdownExporter(t *testing.T) {
 }
 
 func TestNewExportPipelineWithOptions(t *testing.T) {
-	const (
-		tagKey          = "key"
-		tagVal          = "val"
-		eventCountLimit = 10
-	)
+	const eventCountLimit = 10
 
 	collector := startMockZipkinCollector(t)
 	defer collector.Close()
 
-	tp, err := NewExportPipeline(collector.url, serviceName,
+	tp, err := NewExportPipeline(collector.url,
 		WithSDKOptions(
 			sdktrace.WithResource(resource.NewWithAttributes(
-				semconv.ServiceNameKey.String(serviceName),
-				attribute.String(tagKey, tagVal),
+				semconv.ServiceNameKey.String("zipkin-test"),
 			)),
 			sdktrace.WithSpanLimits(sdktrace.SpanLimits{
 				EventCountLimit: eventCountLimit,
@@ -427,6 +421,4 @@ func TestNewExportPipelineWithOptions(t *testing.T) {
 	require.Eventually(t, checkFunc, 10*time.Second, 10*time.Millisecond)
 	model := collector.StealModels()[0]
 	require.Equal(t, len(model.Annotations), eventCountLimit)
-	require.Contains(t, model.Tags, tagKey)
-	require.Contains(t, model.Tags, string(semconv.ServiceNameKey))
 }

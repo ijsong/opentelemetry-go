@@ -29,7 +29,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Jaeger exporter populates Jaeger's Span Process from Resource. (#1673)
 - Changed `WithSDK` to `WithSDKOptions` to accept variadic arguments of `TracerProviderOption` type in `go.opentelemetry.io/otel/exporters/trace/jaeger` package. (#1693)
 - Changed `WithSDK` to `WithSDKOptions` to accept variadic arguments of `TracerProviderOption` type in `go.opentelemetry.io/otel/exporters/trace/zipkin` package. (#1693)
-- Update zipkin export pipeline in `go.opentelemetry.io/otel/exporters/trace/zipkin` package to add resources specified by `WithResource` its tags. (#1693)
 
 ### Removed
 

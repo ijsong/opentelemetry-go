@@ -158,10 +158,7 @@ var extraZipkinTags = []string{
 }
 
 func toZipkinTags(data *export.SpanSnapshot) map[string]string {
-	m := make(map[string]string, len(data.Attributes)+len(data.Resource.Attributes())+len(extraZipkinTags))
-	for _, kv := range data.Resource.Attributes() {
-		m[(string)(kv.Key)] = kv.Value.Emit()
-	}
+	m := make(map[string]string, len(data.Attributes)+len(extraZipkinTags))
 	for _, kv := range data.Attributes {
 		m[(string)(kv.Key)] = kv.Value.Emit()
 	}
